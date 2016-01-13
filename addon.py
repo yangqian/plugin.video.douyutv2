@@ -1,0 +1,209 @@
+﻿# -*- coding: utf-8 -*-
+# Module: default
+# Author: Yangqian
+# Created on: 26.12.2015
+# License: GPL v.3 https://www.gnu.org/copyleft/gpl.html
+# Largely following the example at 
+# https://github.com/romanvm/plugin.video.example/blob/master/main.py
+#get from https://github.com/chrippa/livestreamer/blob/develop/src/livestreamer/plugins/douyutv.py
+#further from https://github.com/soimort/you-get/issues/580
+#and from https://github.com/yan12125/douyu-hack
+
+
+import requests
+import xbmc,xbmcgui,urllib2,re,xbmcplugin
+from bs4 import BeautifulSoup
+from urlparse import parse_qsl
+import sys
+import json
+import hashlib,time
+import xbmcaddon
+import HTMLParser
+pars=HTMLParser.HTMLParser()
+__addon__ = xbmcaddon.Addon()
+__language__=__addon__.getLocalizedString
+API_URL = "http://www.douyutv.com/swf_api/room/{0}?cdn={1}&nofan=yes&_t={2}&sign={3}"
+API_SECRET = u'bLFlashflowlad92'
+PAGE_LIMIT=10
+NEXT_PAGE=__language__(32001)
+headers={'Accept':
+     'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8','Accept-Encoding': 'gzip, deflate','User-Agent':'Mozilla/5.0 (X11; Ubuntu; Linux i686; rv:16.0) Gecko/20100101 Firefox/16.0'}
+
+
+# Get the plugin url in plugin:// notation.
+_url=sys.argv[0]
+# Get the plugin handle as an integer number.
+_handle=int(sys.argv[1])
+
+def list_categories(offset):
+    #f=urllib2.urlopen('http://www.douyutv.com/directory')
+    #rr=BeautifulSoup(f.read())
+    rr=BeautifulSoup(requests.get('http://www.douyutv.com/directory',headers=headers).text)
+    catel=rr.findAll('a',{'class':'thumb'},limit=offset+PAGE_LIMIT+1)
+    rrr=[(x['href'], x.p.text,x.img['data-original']) for x in catel]
+    offset=int(offset)
+    if offset+PAGE_LIMIT<len(rrr):
+      rrr=rrr[offset:offset+PAGE_LIMIT]
+      nextpageflag=True
+    else:
+      rrr=rrr[offset:]
+      nextpageflag=False
+    listing=[]
+    for classname,textinfo,img in rrr:
+        list_item=xbmcgui.ListItem(label=textinfo,thumbnailImage=img)
+        #list_item.setProperty('fanart_image',img)
+        url=u'{0}?action=listing&category={1}&offset=0'.format(_url,classname)
+        is_folder=True
+        listing.append((url,list_item,is_folder))
+    if nextpageflag==True:
+        list_item=xbmcgui.ListItem(label=NEXT_PAGE)
+        url=u'{0}?offset={1}'.format(_url,str(offset+PAGE_LIMIT))
+        is_folder=True
+        listing.append((url,list_item,is_folder))
+    xbmcplugin.addDirectoryItems(_handle,listing,len(listing))
+    #xbmcplugin.addSortMethod(_handle, xbmcplugin.SORT_METHOD_LABEL_IGNORE_THE)
+    # Finish creating a virtual folder.
+    xbmcplugin.endOfDirectory(_handle) 
+
+def list_videos(category,offset=0):
+    #request=urllib2.Request('http://www.douyu.com'+category,headers=headers)
+    #f=urllib2.urlopen(request)
+    #f=urllib2.urlopen('http://www.douyu.com'+category)
+    #r=f.read()
+    #rr=BeautifulSoup(r)
+    rr=BeautifulSoup(requests.get('http://www.douyu.com'+category,headers=headers).text)
+    videol=rr.findAll('a',{'class':'list'},limit=offset+PAGE_LIMIT+1)
+    listing=[]
+    #with open('rooml.dat','w') as f:
+    #  f.writelines([str(x) for x in videol])
+    if offset+PAGE_LIMIT<len(videol):
+      videol=videol[offset:offset+PAGE_LIMIT]
+      nextpageflag=True
+    else:
+      videol=videol[offset:]
+      nextpageflag=False
+    for x in videol:
+        roomid=x['href'][1:]
+        img=x.img['data-original']
+        title=x['title']
+        nickname=x.find('span',{'class':'nnt'}).text
+        view=x.find('span',{'class':'view'}).text
+        liveinfo=u'{0}:{1}:{2}'.format(nickname,title,view)
+        list_item=xbmcgui.ListItem(label=liveinfo,thumbnailImage=img)
+        #list_item.setProperty('fanart_image',img)
+        url='{0}?action=play&video={1}'.format(_url,roomid)
+        is_folder=False
+        listing.append((url,list_item,is_folder))
+    if nextpageflag==True:
+        list_item=xbmcgui.ListItem(label=NEXT_PAGE)
+        url='{0}?action=listing&category={1}&offset={2}'.format(_url,category,offset+PAGE_LIMIT)
+        is_folder=True
+        listing.append((url,list_item,is_folder))
+    xbmcplugin.addDirectoryItems(_handle,listing,len(listing))
+    #xbmcplugin.addSortMethod(_handle, xbmcplugin.SORT_METHOD_LABEL_IGNORE_THE)
+    # Finish creating a virtual folder.
+    xbmcplugin.endOfDirectory(_handle) 
+
+def get_room(roomid,cdn):
+      ts = int(time.time()/60)
+      sign = hashlib.md5(("{0}{1}{2}".format(roomid, API_SECRET, ts)).encode("utf-8")).hexdigest()
+      url=API_URL.format(roomid, cdn, ts, sign)
+      res = urllib2.urlopen(url).read()
+      room=json.loads(res)
+      #with open('room.dat','w') as f:
+      #  f.writelines([str(cdn),str(ts),str(sign),url,str(room)])
+      return room
+
+def get_play_item(room):
+      img=room['data']['owner_avatar']
+      nickname=room['data']['nickname']
+      roomname=room['data']['room_name']
+      roomid=room['data']['room_id']
+      cdn=room['data']['rtmp_cdn']
+      combinedname=pars.unescape(u'{0}:{1}:{3}?cdn={2}'.format(nickname,roomname,cdn,roomid))
+      baseurl=room['data']['rtmp_url']
+      vbest=room['data']['rtmp_live']
+      multi_bitrate=room['data']['rtmp_multi_bitrate']
+      if len(multi_bitrate)!=0:
+        v900=room['data']['rtmp_multi_bitrate']['middle2']
+        v500=room['data']['rtmp_multi_bitrate']['middle']
+      else:
+        v900=vbest
+        v500=vbest
+      if __addon__.getSetting("videoQuality") == "0":
+          vquality=vbest
+      elif __addon__.getSetting("videoQuality") == "1":
+          vquality=v900
+      else:
+          vquality=v500
+      path='{0}/{1}'.format(baseurl,vquality)
+      play_item = xbmcgui.ListItem(combinedname,path=path,thumbnailImage=img)
+      play_item.setInfo(type="Video",infoLabels={"Title":combinedname})
+      return (path,play_item)
+
+def play_video(roomid):
+    """
+    Play a video by the provided path.
+    :param path: str
+    :return: None
+    """
+    cdnindex=__addon__.getSetting("cdn")
+    if cdnindex != "0":
+      cdndict={"1":"ws","2":"ws2","3":"lx","4":"dl","5":"tct","6":""}
+      cdn=cdndict[cdnindex]
+      room=get_room(roomid,cdn)
+      path,play_item=get_play_item(room)
+      # Pass the item to the Kodi player.
+      xbmcplugin.setResolvedUrl(_handle, True, listitem=play_item)
+      # directly play the item.
+      xbmc.Player().play(path, play_item)
+    else:
+      cdnlist=["ws","ws2","lx","dl","tct"]
+      itemlist=[get_play_item(get_room(roomid,x)) for x in cdnlist]
+      if __addon__.getSetting("excludeRTMP") == 'true':
+        newitemlist=[]
+        for path,x in itemlist:
+          if 'rtmp' not in path:
+            newitemlist.append((path,x))
+        itemlist=newitemlist
+      playlist=xbmc.PlayList(xbmc.PLAYLIST_VIDEO)
+      playlist.clear()
+      for path,x in itemlist:
+        playlist.add(path,x)
+      xbmc.Player().play(playlist)
+
+      
+
+ 
+
+def router(paramstring):
+    """
+    Router function that calls other functions
+    depending on the provided paramstring
+    :param paramstring:
+    :return:
+    """
+    # Parse a URL-encoded paramstring to the dictionary of
+    # {<parameter>: <value>} elements
+    params = dict(parse_qsl(paramstring))
+    # Check the parameters passed to the plugin
+    if 'action' in params:
+        if params['action'] == 'listing':
+            # Display the list of videos in a provided category.
+            list_videos(params['category'],int(params['offset']))
+        elif params['action'] == 'play':
+            # Play a video from a provided URL.
+            play_video(params['video'])
+    else:
+        # If the plugin is called from Kodi UI without any parameters,
+        # display the list of video categories
+        if 'offset' in params:
+          list_categories(int(params['offset']))
+        else:
+          list_categories(0)
+
+
+if __name__ == '__main__':
+    # Call the router function and pass the plugin call parameters to it.
+    # We use string slicing to trim the leading '?' from the plugin call paramstring
+    router(sys.argv[2][1:])

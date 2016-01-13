@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<settings>
+    <setting id="videoQuality" type="enum" label="32002" lvalues="32003|32004|32005" default="0"/>
+    <setting id="cdn" type="enum" label="cdn" values="auto自动|ws网宿|ws2网宿2|lx蓝讯|dl|tct|default" default="0"/>
+    <setting id="excludeRTMP" type="bool" label="excludeRTMP" default="true"/>
+</settings>
