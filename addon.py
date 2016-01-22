@@ -10,6 +10,7 @@
 #and from https://github.com/yan12125/douyu-hack
 
 
+from contextlib import contextmanager, closing, nested
 import requests
 import xbmc,xbmcgui,urllib2,re,xbmcplugin
 from bs4 import BeautifulSoup
@@ -19,6 +20,8 @@ import json
 import hashlib,time
 import xbmcaddon
 import HTMLParser
+from danmu import OverlayText
+from douyudanmu import douyudanmu
 pars=HTMLParser.HTMLParser()
 __addon__ = xbmcaddon.Addon()
 __language__=__addon__.getLocalizedString
@@ -28,6 +31,20 @@ PAGE_LIMIT=10
 NEXT_PAGE=__language__(32001)
 headers={'Accept':
      'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8','Accept-Encoding': 'gzip, deflate','User-Agent':'Mozilla/5.0 (X11; Ubuntu; Linux i686; rv:16.0) Gecko/20100101 Firefox/16.0'}
+
+
+TORRENT2HTTP_POLL = 1000
+XBFONT_LEFT = 0x00000000
+XBFONT_RIGHT = 0x00000001
+XBFONT_CENTER_X = 0x00000002
+XBFONT_CENTER_Y = 0x00000004
+XBFONT_TRUNCATED = 0x00000008
+XBFONT_JUSTIFY = 0x00000010
+
+VIEWPORT_WIDTH = 1920.0
+VIEWPORT_HEIGHT = 1088.0
+OVERLAY_WIDTH = int(VIEWPORT_WIDTH * 0.4) # 70% size
+OVERLAY_HEIGHT = 150
 
 
 # Get the plugin url in plugin:// notation.
@@ -148,6 +165,7 @@ def play_video(roomid):
     :return: None
     """
     cdnindex=__addon__.getSetting("cdn")
+    player=xbmc.Player()
     if cdnindex != "0":
       cdndict={"1":"ws","2":"ws2","3":"lx","4":"dl","5":"tct","6":""}
       cdn=cdndict[cdnindex]
@@ -156,7 +174,7 @@ def play_video(roomid):
       # Pass the item to the Kodi player.
       xbmcplugin.setResolvedUrl(_handle, True, listitem=play_item)
       # directly play the item.
-      xbmc.Player().play(path, play_item)
+      player.play(path, play_item)
     else:
       cdnlist=["ws","ws2","lx","dl","tct"]
       itemlist=[get_play_item(get_room(roomid,x)) for x in cdnlist]
@@ -170,7 +188,29 @@ def play_video(roomid):
       playlist.clear()
       for path,x in itemlist:
         playlist.add(path,x)
-      xbmc.Player().play(playlist)
+      player.play(playlist)
+    with closing(OverlayText(alignment=0)) as overlay:
+      #print "starting",i
+      while not player.isPlaying():
+        xbmc.sleep(100)
+      overlay.show()
+      overlay.text=u'弹幕初始化。。。'
+      textlist=[u'弹幕初始化成功。。。']
+      danmu=douyudanmu(roomid)
+      print danmu.roominfo,roomid
+      if danmu.roominfo==None:
+        return
+      while not xbmc.abortRequested and player.isPlaying():
+      #while not xbmc.abortRequested:
+        s=danmu.get_danmu()
+        if len(s)!=0:
+          textlist.append(s)
+          if(len(textlist)>20):
+            textlist.pop(0)
+        overlay.text=u'\n'.join(textlist)
+        #print "looping",i
+    danmu.exit()
+
 
       
 
